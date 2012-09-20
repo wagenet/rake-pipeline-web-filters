@@ -1,6 +1,9 @@
 module Rake::Pipeline::Web::Filters
 
   class NeuterBatch
+
+    attr_reader :known_files
+
     def initialize(config, known_files)
       @config = config || {}
       @known_files = known_files
@@ -56,9 +59,20 @@ module Rake::Pipeline::Web::Filters
       source = super
 
       required_files = @batch.strip_requires(source).map do |req|
+        req_root = root
         req_path = @batch.transform_path(req, self)
-        if req_path && !@batch.required?(File.expand_path(req_path, root))
-          @batch.file_wrapper(self.class, root, req_path, encoding).read
+
+        if req_path.is_a?(Regexp)
+          file = @batch.known_files.find{|f| f =~ req_path }
+
+          raise "Unable to find matching file" unless file
+
+          req_root = File.dirname(file)
+          req_path = File.basename(file)
+        end
+
+        if req_path && !@batch.required?(File.expand_path(req_path, req_root))
+          @batch.file_wrapper(self.class, req_root, req_path, encoding).read
         else
           nil
         end
@@ -104,7 +118,8 @@ module Rake::Pipeline::Web::Filters
 
     def additional_dependencies(input)
       method = @config[:additional_dependencies]
-      method ? method.call(input).map{|p| File.expand_path(p, input.root) } : []
+      method ? method.call(input, pipeline).map{|p| File.expand_path(p, input.root) } : []
     end
   end
 end
+
